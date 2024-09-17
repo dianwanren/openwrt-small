@@ -1,26 +1,28 @@
 name: Clone AdGuardHome and luci-app-adguardhome
 
 on:
-  workflow_dispatch:  # 手动触发
+  workflow_dispatch:  # 手动触发此工作流
 
 jobs:
   clone:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest  # 使用最新的 Ubuntu 操作系统
 
     steps:
-    - name: Checkout your repository
+    - name: Checkout your repository  # 第一步：拉取你自己的仓库
       uses: actions/checkout@v3
 
-    - name: Clone AdGuardHome repository
+    - name: Clone AdGuardHome repository  # 第二步：克隆 AdGuardHome 仓库到你的仓库根目录下
       run: |
         git clone https://github.com/AdguardTeam/AdGuardHome.git AdGuardHome
 
-    - name: Clone luci-app-adguardhome repository
+    - name: Clone luci-app-adguardhome repository  # 第三步：克隆 luci-app-adguardhome 仓库到你的仓库根目录下
       run: |
         git clone https://github.com/rufengsuixing/luci-app-adguardhome.git luci-app-adguardhome
 
-    - name: Commit and push changes
+    - name: Commit and push changes  # 第四步：提交并推送更改
       run: |
-        git add .
-        git commit -m "Cloned AdGuardHome and luci-app-adguardhome"
-        git push
+        git add .  # 添加所有更改到 git
+        # 这里我们使用 -c 参数临时设置用户名和邮箱，以便完成 git 提交
+        git -c user.name="github-actions" -c user.email="actions@github.com" commit -m "Cloned AdGuardHome and luci-app-adguardhome"
+        # 这里的 user.name 和 user.email 分别是你指定的用户名和邮箱，GitHub Actions 通常使用“github-actions”和“actions@github.com”作为默认值
+        git push  #
