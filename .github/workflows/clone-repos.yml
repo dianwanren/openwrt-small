@@ -21,8 +21,6 @@ jobs:
 
     - name: Commit and push changes
       run: |
-        git config --global user.name "YourGitHubUsername"
-        git config --global user.email "YourEmail@example.com"
         git add .
         git commit -m "Cloned AdGuardHome and luci-app-adguardhome"
         git push
