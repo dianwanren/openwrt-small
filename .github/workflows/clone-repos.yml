@@ -1,37 +1,28 @@
-name: Clone Repositories
+name: Clone AdGuardHome and luci-app-adguardhome
 
-# 定时触发，设置为每天凌晨 0 点
 on:
-  schedule:
-    - cron: '0 0 * * *'
+  workflow_dispatch:  # 手动触发
 
 jobs:
-  clone-repos:
+  clone:
     runs-on: ubuntu-latest
 
     steps:
-    # Checkout your repository
     - name: Checkout your repository
       uses: actions/checkout@v3
 
-    # Remove existing cloned repos (if any)
-    - name: Remove old cloned repositories
-      run: |
-        rm -rf AdGuardHome luci-app-adguardhome
-
-    # Clone AdGuardTeam/AdGuardHome
     - name: Clone AdGuardHome repository
-      run: git clone https://github.com/AdguardTeam/AdGuardHome.git
-
-    # Clone rufengsuixing/luci-app-adguardhome
-    - name: Clone luci-app-adguardhome repository
-      run: git clone https://github.com/rufengsuixing/luci-app-adguardhome.git
-
-    # Push changes back to your repository
-    - name: Commit and Push changes
       run: |
-        git config --global user.name "Your Name"
-        git config --global user.email "your-email@example.com"
+        git clone https://github.com/AdguardTeam/AdGuardHome.git AdGuardHome
+
+    - name: Clone luci-app-adguardhome repository
+      run: |
+        git clone https://github.com/rufengsuixing/luci-app-adguardhome.git luci-app-adguardhome
+
+    - name: Commit and push changes
+      run: |
+        git config --global user.name "YourGitHubUsername"
+        git config --global user.email "YourEmail@example.com"
         git add .
-        git commit -m "Daily update: Cloned repositories"
+        git commit -m "Cloned AdGuardHome and luci-app-adguardhome"
         git push
