@@ -1,0 +1,35 @@
+name: Clone Repositories Daily
+
+# 定时任务 - 每天的凌晨 0 点运行
+on:
+  schedule:
+    - cron: '0 0 * * *'  # 使用 UTC 时间，等于每天 0 点
+
+jobs:
+  clone:
+    runs-on: ubuntu-latest
+    
+    steps:
+      # 检出当前仓库的内容
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      # 克隆 AdGuardHome 项目
+      - name: Clone AdGuardHome
+        run: |
+          rm -rf AdGuardHome || true  # 如果已经存在，删除
+          git clone https://github.com/AdguardTeam/AdGuardHome.git
+
+      # 克隆 luci-app-adguardhome 项目
+      - name: Clone luci-app-adguardhome
+        run: |
+          rm -rf luci-app-adguardhome || true  # 如果已经存在，删除
+          git clone https://github.com/rufengsuixing/luci-app-adguardhome.git
+
+      # 提交更改到当前仓库
+      - name: Commit Changes
+        run: |
+          git config --global user.name "dianwanren"  # 你的 GitHub 用户名
+          git add .
+          git commit -m "Daily update: Cloned repositories"
+          git push
