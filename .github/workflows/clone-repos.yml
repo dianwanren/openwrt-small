@@ -20,9 +20,10 @@ jobs:
         git clone https://github.com/rufengsuixing/luci-app-adguardhome.git luci-app-adguardhome
 
     - name: Commit and push changes  # 第四步：提交并推送更改
+      env:
+        GH_TOKEN: ${{ secrets.GH_PAT }}  # 使用你的 GitHub Secret
       run: |
         git add .  # 添加所有更改到 git
-        # 这里我们使用 -c 参数临时设置用户名和邮箱，以便完成 git 提交
         git -c user.name="github-actions" -c user.email="actions@github.com" commit -m "Cloned AdGuardHome and luci-app-adguardhome"
-        # 这里的 user.name 和 user.email 分别是你指定的用户名和邮箱，GitHub Actions 通常使用“github-actions”和“actions@github.com”作为默认值
-        git push  #
+        git remote set-url origin https://x-access-token:${{ secrets.GH_PAT }}@github.com/你的用户名/你的仓库名.git
+        git push  # 将更改推送到你的仓库
