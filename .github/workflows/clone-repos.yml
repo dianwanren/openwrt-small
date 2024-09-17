@@ -25,5 +25,5 @@ jobs:
       run: |
         git add .  # 添加所有更改到 git
         git -c user.name="github-actions" -c user.email="actions@github.com" commit -m "Cloned AdGuardHome and luci-app-adguardhome"
-        git remote set-url origin https://x-access-token:${{ secrets.GH_PAT }}@github.com/你的用户名/你的仓库名.git
+        git remote set-url origin https://x-access-token:${{ secrets.GH_PAT }}@github.com/dianwanren/openwrt-packages.git
         git push  # 将更改推送到你的仓库
