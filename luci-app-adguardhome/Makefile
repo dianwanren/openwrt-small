@@ -13,6 +13,7 @@ PKG_MAINTAINER:=<https://github.com/rufengsuixing/luci-app-adguardhome>
 LUCI_TITLE:=LuCI app for adguardhome
 LUCI_DEPENDS:=+!wget&&!curl&&!wget-ssl:curl
 LUCI_PKGARCH:=all
+LUCI_LANG:=zh-cn
 LUCI_DESCRIPTION:=LuCI support for adguardhome
 
 define Package/luci-app-adguardhome/conffiles
