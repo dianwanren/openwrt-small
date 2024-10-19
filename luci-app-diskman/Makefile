@@ -1,50 +1,53 @@
-#
-# Copyright (C) 2019 OpenWrt.org
-#
-# This is free software, licensed under the GNU General Public License v2.
-# See /LICENSE for more information.
-#
 include $(TOPDIR)/rules.mk
 
-PKG_NAME:=parted
-PKG_VERSION:=3.3
-PKG_RELEASE:=1
+PKG_NAME:=luci-app-diskman
+PKG_VERSION:=0.2.11
+PKG_RELEASE:=2
 
-PKG_BUILD_DIR:=$(BUILD_DIR)/parted-$(PKG_VERSION)
-PKG_SOURCE:=parted-$(PKG_VERSION).tar.xz
-PKG_SOURCE_URL:=@GNU/parted
-PKG_MD5SUM:=090655d05f3c471aa8e15a27536889ec
+PKG_MAINTAINER:=lisaac <lisaac.cn@gmail.com>
+PKG_LICENSE:=AGPL-3.0
+
+LUCI_TITLE:=Disk Manager interface for LuCI
+LUCI_DEPENDS:=+blkid +e2fsprogs +parted +smartmontools \
+	+PACKAGE_$(PKG_NAME)_INCLUDE_btrfs_progs:btrfs-progs \
+	+PACKAGE_$(PKG_NAME)_INCLUDE_lsblk:lsblk \
+	+PACKAGE_$(PKG_NAME)_INCLUDE_mdadm:mdadm \
+	+PACKAGE_$(PKG_NAME)_INCLUDE_kmod_md_raid456:mdadm \
+	+PACKAGE_$(PKG_NAME)_INCLUDE_kmod_md_raid456:kmod-md-raid456 \
+	+PACKAGE_$(PKG_NAME)_INCLUDE_kmod_md_linears:mdadm \
+	+PACKAGE_$(PKG_NAME)_INCLUDE_kmod_md_linears:kmod-md-linear
 
 include $(INCLUDE_DIR)/package.mk
-define Package/parted
-	SECTION:=utils
-	CATEGORY:=Utilities
-	SUBMENU:=Disc
-	TITLE:=parted Partition editor
-	URL:=http://www.gnu.org/software/parted/index.shtml
-	DEPENDS:= +libuuid +libreadline +libncurses +libblkid
+
+define Package/$(PKG_NAME)/config
+config PACKAGE_$(PKG_NAME)_INCLUDE_btrfs_progs
+	bool "Include btrfs-progs"
+	default y
+
+config PACKAGE_$(PKG_NAME)_INCLUDE_lsblk
+	bool "Include lsblk"
+	default y
+
+config PACKAGE_$(PKG_NAME)_INCLUDE_mdadm
+	bool "Include mdadm"
+	default n
+
+config PACKAGE_$(PKG_NAME)_INCLUDE_kmod_md_raid456
+	depends on PACKAGE_$(PKG_NAME)_INCLUDE_mdadm
+	bool "Include kmod-md-raid456"
+	default n
+
+config PACKAGE_$(PKG_NAME)_INCLUDE_kmod_md_linear
+	depends on PACKAGE_$(PKG_NAME)_INCLUDE_mdadm
+	bool "Include kmod-md-linear"
+	default n
 endef
 
-define Package/parted/description
-	parted Partition editor
-	http://www.gnu.org/software/parted/index.shtml
+define Package/$(PKG_NAME)/postinst
+#!/bin/sh
+rm -fr /tmp/luci-indexcache /tmp/luci-modulecache
 endef
 
-define Build/Configure
-	$(call Build/Configure/Default, \
-		--without-readline \
-		--disable-device-mapper \
-		--disable-nls \
-	)
-endef
+include ../../luci.mk
 
-define Package/parted/install
-	$(INSTALL_DIR) $(1)/usr/sbin
-	$(INSTALL_DIR) $(1)/usr/lib
-	$(INSTALL_BIN) $(PKG_BUILD_DIR)/libparted/.libs/*.so* $(1)/usr/lib/
-	$(INSTALL_BIN) $(PKG_BUILD_DIR)/libparted/fs/.libs/*.so* $(1)/usr/lib/
-	$(INSTALL_BIN) $(PKG_BUILD_DIR)/parted/.libs/parted $(1)/usr/sbin/
-	$(INSTALL_BIN) $(PKG_BUILD_DIR)/partprobe/.libs/partprobe $(1)/usr/sbin/
-endef
-
-$(eval $(call BuildPackage,parted))
+# call BuildPackage - OpenWrt buildroot signature
