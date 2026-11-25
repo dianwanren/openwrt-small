@@ -30,20 +30,20 @@ const callRestart = rpc.declare({ object: 'honk', method: 'restart', expect: { '
 const callSettings = rpc.declare({
 	object: 'honk',
 	method: 'settings',
-	params: [ 'lan_network', 'listen_port', 'clash_api_enabled', 'clash_api_port', 'clash_api_secret' ],
+	params: [ 'lan_network', 'lan_device', 'listen_host', 'listen_port', 'clash_api_enabled', 'clash_host', 'clash_api_port', 'clash_api_secret', 'clash_api_secret_mode', 'expect_sha256' ],
 	expect: { '': {} }
 });
 
 const callProbeSubscription = rpc.declare({
 	object: 'honk',
 	method: 'probe_subscription',
-	params: [ 'url' ],
+	params: [ 'url', 'ua' ],
 	expect: { '': {} }
 });
 const callAddSubscription = rpc.declare({
 	object: 'honk',
 	method: 'add_subscription',
-	params: [ 'name', 'url' ],
+	params: [ 'name', 'url', 'ua', 'interval' ],
 	expect: { '': {} }
 });
 const callAddNodes = rpc.declare({
@@ -67,13 +67,32 @@ const callConfigDraftRead = rpc.declare({
 const callLanCandidates = rpc.declare({ object: 'honk', method: 'lan_candidates', expect: { '': {} } });
 const callConfigValidate = rpc.declare({ object: 'honk', method: 'config_validate', params: [ 'content' ], expect: { '': {} } });
 const callConfigSave = rpc.declare({ object: 'honk', method: 'config_save', params: [ 'content' ], expect: { '': {} } });
+const callSystemRead = rpc.declare({
+	object: 'honk', method: 'system_read', expect: { }
+});
+
+const callSystemSave = rpc.declare({
+	object: 'honk', method: 'system_save', params: [ 'content' ], expect: { }
+});
+
+const callSystemPanel = rpc.declare({
+	object: 'honk', method: 'system_panel', params: [ 'dry_run', 'expect', 'base' ], expect: { }
+});
+
 const callConfigApply = rpc.declare({ object: 'honk', method: 'config_apply', expect: { '': {} } });
+const callConfigMergePreview = rpc.declare({ object: 'honk', method: 'config_merge_preview', expect: { '': {} } });
+const callConfigMergeApply = rpc.declare({
+	object: 'honk', method: 'config_merge_apply',
+	params: [ 'config_sha256', 'system_sha256', 'candidate_sha256' ], expect: { '': {} }
+});
+const callConfigDetach = rpc.declare({ object: 'honk', method: 'config_detach', params: [ 'dry_run' ], expect: { '': {} } });
 const callRepair = rpc.declare({ object: 'honk', method: 'repair', expect: { '': {} } });
+const callRecover = rpc.declare({ object: 'honk', method: 'recover', expect: { '': {} } });
 const callBackup = rpc.declare({ object: 'honk', method: 'backup', expect: { '': {} } });
 const callRestore = rpc.declare({ object: 'honk', method: 'restore', expect: { '': {} } });
 const callRestorePrepare = rpc.declare({ object: 'honk', method: 'restore_prepare', expect: { '': {} } });
 const callResetAdmin = rpc.declare({ object: 'honk', method: 'reset_admin', expect: { '': {} } });
-const callReset = rpc.declare({ object: 'honk', method: 'reset', expect: { '': {} } });
+const callReset = rpc.declare({ object: 'honk', method: 'reset', params: [ 'lan_device', 'lan_ip' ], expect: { '': {} } });
 const callJobStatus = rpc.declare({
 	object: 'honk',
 	method: 'job_status',
@@ -89,7 +108,75 @@ const callLogs = rpc.declare({
 const callUpdateCheck = rpc.declare({ object: 'honk', method: 'update_check', expect: { '': {} } });
 const callUpdateApply = rpc.declare({ object: 'honk', method: 'update_apply', expect: { '': {} } });
 
+if (!L.env.rpctimeout || L.env.rpctimeout < 180)
+	L.env.rpctimeout = 180;
+
 let pageStylesInstalled = false;
+let switchStylesInstalled = false;
+
+const SWITCH_CSS = [
+	'.honk-page .honk-switch-wrap{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;vertical-align:middle;line-height:1}',
+	'.honk-page .honk-switch-label{font-size:11px;font-weight:600;letter-spacing:.3px;opacity:.62}',
+	'.honk-page .honk-switch{position:relative!important;flex:0 0 auto;width:42px!important;height:22px!important;min-width:0!important;min-height:0!important;margin:0!important;padding:0!important;border:0!important;border-radius:999px!important;background:rgba(128,128,128,.28)!important;background-image:none!important;box-shadow:none!important;line-height:1!important;text-transform:none!important;transform:none!important;overflow:hidden;cursor:pointer;transition:background .18s ease,opacity .18s ease}',
+	'.honk-page .honk-switch .honk-switch-knob{position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:rgba(255,255,255,.96);box-shadow:0 1px 4px rgba(0,0,0,.2);transition:left .18s ease}',
+	'.honk-page .honk-switch.is-on{background:rgba(74,160,101,.65)!important}',
+	'.honk-page .honk-switch:disabled{opacity:.45;cursor:not-allowed}',
+	'.honk-page .honk-switch:focus-visible{outline:2px solid rgba(74,160,101,.75);outline-offset:2px}',
+	'.honk-page .honk-switch-wrap>input.honk-switch-input{position:absolute!important;width:1px!important;height:1px!important;margin:0!important;padding:0!important;border:0!important;opacity:0!important;pointer-events:none!important;appearance:none!important;-webkit-appearance:none!important;box-shadow:none!important;background:none!important}'
+].join('\n');
+
+function installSwitchStyles() {
+	if (switchStylesInstalled || document.getElementById('honk-switch-styles'))
+		return;
+
+	const style = document.createElement('style');
+	style.id = 'honk-switch-styles';
+	style.appendChild(document.createTextNode(SWITCH_CSS));
+	document.head.appendChild(style);
+	switchStylesInstalled = true;
+}
+
+/* 主题对 input[type=checkbox] 的处理各不相同（Argon 会放大成错位的胶囊，
+   Bootstrap 干脆是原生小方框），所以开关自己画：真 input 留在表单里保证
+   取值/回填逻辑不变，外面套一层可点的胶囊和 ON/OFF 文字。 */
+function switchControl(input) {
+	installSwitchStyles();
+	input.classList.add('honk-switch-input');
+	input.setAttribute('tabindex', '-1');
+
+	const caption = E('span', { 'class': 'honk-switch-label' }, '');
+	const knob = E('span', { 'class': 'honk-switch-knob' });
+	const toggle = E('button', {
+		'class': 'honk-switch',
+		'type': 'button',
+		'role': 'switch',
+		'aria-checked': input.checked ? 'true' : 'false'
+	}, knob);
+
+	const sync = function() {
+		toggle.classList.toggle('is-on', !!input.checked);
+		toggle.setAttribute('aria-checked', input.checked ? 'true' : 'false');
+		toggle.disabled = !!input.disabled;
+		caption.textContent = input.checked ? 'ON' : 'OFF';
+		knob.style.left = input.checked ? '23px' : '3px';
+	};
+
+	toggle.addEventListener('click', function(ev) {
+		ev.preventDefault();
+		if (input.disabled)
+			return;
+		input.checked = !input.checked;
+		input.dispatchEvent(new Event('change', { bubbles: true }));
+		sync();
+	});
+	input.addEventListener('change', sync);
+
+	/* 表单回填（restoreFields）直接改 input.checked，不会触发 change。 */
+	const wrapper = E('span', { 'class': 'honk-switch-wrap' }, [ input, caption, toggle ]);
+	wrapper.syncSwitch = sync;
+	sync();
+	return wrapper;
+}
 
 function installStyles() {
 	if (pageStylesInstalled || document.getElementById('honk-page-styles'))
@@ -98,7 +185,7 @@ function installStyles() {
 	const stylesheet = document.createElement('link');
 	stylesheet.id = 'honk-page-styles';
 	stylesheet.rel = 'stylesheet';
-	stylesheet.href = L.resource('view/honk/honk.css');
+	stylesheet.href = L.resource('view/honk/honk.css') + (L.env.resource_version ? '?v=' + L.env.resource_version : '');
 	document.head.appendChild(stylesheet);
 	pageStylesInstalled = true;
 }
@@ -171,10 +258,11 @@ function localClashUi(status, secret) {
 		const query = [
 			'host=' + encodeURIComponent(host),
 			'hostname=' + encodeURIComponent(host),
-			'port=' + encodeURIComponent(port),
-			'secret=' + encodeURIComponent(secret || '')
-		].join('&');
-		return base + '?' + query + '#/proxies';
+			'port=' + encodeURIComponent(port)
+		];
+		if (typeof secret === 'string')
+			query.push('secret=' + encodeURIComponent(secret));
+		return base + '?' + query.join('&') + '#/proxies';
 	}
 	catch (e) {
 		return null;
@@ -196,6 +284,26 @@ function tokenMessage(token) {
 		settings_saved: _('Settings saved and applied.'),
 		initialized: _('Honk initialized.'),
 		administrator_initialized: _('Honk initialized.'),
+		config_valid: _('Configuration is valid. No file was rewritten.'),
+		config_invalid: _('Configuration validation failed. Check the service logs.'),
+		default_config_unavailable: _('The installed default template is missing. Reinstall Honk.'),
+		main_config_backup_failed: _('Could not back up config.dae. No configuration was replaced.'),
+		main_config_unavailable: _('config.dae is missing or is not a regular file.'),
+		main_config_changed_concurrently: _('config.dae changed during setup. Nothing was overwritten.'),
+		default_config_render_failed: _('Could not prepare the first setup configuration.'),
+		candidate_config_invalid: _('The first setup configuration could not be validated or started.'),
+		main_config_write_failed: _('Could not install the first setup configuration. Check the service logs.'),
+		uci_commit_failed_main_restore_pending: _('Could not finish initialization. Check the configuration and service logs.'),
+		runtime_settings_owned_by_file: _('LAN and API settings are managed in the configuration file.'),
+		configuration_page_merge_preview_required: _('Preview the merge on the configuration page.'),
+		custom_config_requires_configuration_page: _('This file has been customized. Use the configuration page instead of the first setup wizard.'),
+		nfqueue_runtime_unavailable: _('Update the Honk core together with this package. Its configuration diagnostics are incomplete.'),
+	state_database_corrupt: _('状态数据库损坏，请到维护页执行重置后重新初始化。'),
+		config_merge_not_applicable: _('This layout cannot be merged automatically. Keep editing the existing files.'),
+		config_merge_validation_failed: _('The merged configuration did not pass validation. The existing files were kept.'),
+		config_merge_source_changed: _('A source file changed. Refresh the merge preview.'),
+		config_merge_preview_changed: _('The merged candidate changed. Refresh the preview.'),
+		system_config_not_included: _('The active configuration no longer uses system.dae. Edit config.dae instead.'),
 		system_config_healthy: _('System check passed.'),
 		system_config_repaired: _('Repair completed.'),
 		backup_created: _('Backup created.'),
@@ -203,6 +311,18 @@ function tokenMessage(token) {
 		data_reset: _('Honk data reset. The service is stopped.'),
 		worker_lost: _('The maintenance worker stopped unexpectedly; check system recovery status before retrying.'),
 		operation_failed: _('The maintenance operation failed.'),
+	maintenance_no_result: _('The maintenance script stopped without reporting a result. Check Maintenance → Logs → Maintenance for the reason.'),
+	job_runner_unavailable: _('The maintenance worker did not start at all. The panel cannot see why, so this is a packaging or permission problem on the device.'),
+	job_runner_not_root: _('The maintenance worker did not run as root.'),
+	honk_tree_missing: _('The /etc/honk directory is missing or is a symlink.'),
+	honk_tree_has_symlink: _('There is a symlink under /etc/honk. The backup cannot carry it; remove it and try again.'),
+	honk_tree_has_special_file: _('There is a non-regular file (device, socket, fifo) under /etc/honk. Remove it and try again.'),
+	honk_tree_unreadable: _('A file under /etc/honk could not be read. Check the filesystem and permissions.'),
+	honk_backup_file_too_large: _('A single file under /etc/honk is larger than 64 MB. The service log names it.'),
+	honk_backup_tree_too_large: _('The backup would exceed 512 files or 127 MB. The service log names the entry that crossed the limit.'),
+	honk_config_incomplete: _('config.dae or system.dae is missing under /etc/honk. Reinstall or repair Honk before backing up.'),
+		unsupported_honk_tree_entry: _('The backup found an entry under /etc/honk it cannot archive (a symlink, a special file, or too many files).'),
+		unsafe_honk_file_name: _('A file under /etc/honk has a name the backup cannot carry (spaces, wildcards or "../"). The service log names it; rename it and try again.'),
 		job_timeout: _('The maintenance operation timed out.'),
 		maintenance_recovery_required: _('Recovery is required. Run system recovery before starting another maintenance operation.'),
 		update_recovery_required: _('The signed update did not finish. Keep Honk stopped and reinstall a complete verified package set before retrying.'),
@@ -227,6 +347,8 @@ function tokenMessage(token) {
 		share_links_too_large: _('Share links exceed the 16 KiB per request limit.'),
 		share_links_invalid_or_conflicting: _('A share link is invalid or conflicts with an existing node. Review the input and try again.'),
 		subscription_invalid: _('The subscription could not be added: the name must be 1-64 characters without single quotes, and the URL must be a valid http(s) link.'),
+		subscription_ua_invalid: _('The User-Agent contains characters that cannot be stored. Keep it under 200 printable ASCII characters.'),
+		subscription_interval_invalid: _('The update interval must be a whole number of days.'),
 		subscription_invalid_or_conflicting: _('The subscription is invalid or its name already exists.'),
 		subscription_no_nodes: _('The subscription returned no usable nodes. The configuration was not changed.'),
 		subscription_added: _('Subscription saved with usable nodes.'),
@@ -251,6 +373,7 @@ function tokenMessage(token) {
 		upload_target_unavailable: _('The temporary configuration upload is unavailable. Try again.'),
 		config_too_large: _('The configuration file exceeds the 2 MiB limit.'),
 		config_applied: _('Configuration applied and Honk is running.'),
+		config_applied_secrets_moved: _('Configuration applied and Honk is running. The listener secret moved to secrets.dae.'),
 		config_apply_failed_rolled_back: _('Honk could not start with this configuration. The previous file was restored.'),
 		config_apply_rollback_failed: _('Startup failed and the automatic rollback did not finish. The snapshot was kept; run system recovery.'),
 		config_changed_concurrently: _('The configuration changed during the operation. Nothing was applied.'),
@@ -315,7 +438,7 @@ function tokenMessage(token) {
 		boot_link_update_and_rollback_failed_snapshot_retained: _('更新开机自启链接失败且回滚未完成，快照已保留。'),
 		repair_restart_failed_rolled_back: _('修复后重启失败，已回滚。'),
 		repair_restart_and_rollback_failed_snapshot_retained: _('修复后重启失败且回滚未完成，快照已保留。'),
-		subscription_unreachable: _('抓不到这个订阅地址：网络不通、需要代理，或链接已失效。'),
+		subscription_unreachable: _('抓不到这个订阅地址：网络不通、需要代理、链接已失效，或机场校验 User-Agent。'),
 		subscription_empty: _('订阅内容是空的。'),
 		subscription_too_large: _('订阅内容超过 4 MiB，拒绝处理。'),
 		configuration_validation_failed: _('配置没有通过静态校验。'),
@@ -335,6 +458,12 @@ function tokenMessage(token) {
 		config_validation_failed: _('The configuration did not pass static validation.'),
 		config_validation_unavailable: _('The core validator did not return a result.'),
 		config_settings_owned_by_file: _('这些设置由当前配置文件决定，请到「配置 → 编辑配置」里修改。'),
+		config_detached: _('已改由面板接管，订阅和分流规则保持不变。'),
+		config_not_file_owned: _('当前配置没有自带系统设置，不需要切换。'),
+		detach_layout_unsupported: _('配置里的 global / experimental 写法无法自动拆出，请到「配置 → 编辑配置」手动删除。'),
+		detach_validation_failed: _('拆分后的配置没有通过校验，原配置未改动。'),
+		detach_failed_rolled_back: _('切换后服务没能启动，已还原原配置。'),
+		detach_rollback_failed: _('切换失败且自动还原未完成，请到「维护」执行系统恢复。'),
 		config_valid: _('配置通过校验。'),
 		config_invalid: _('配置没有通过校验。'),
 		config_saved_pending_apply: _('Configuration saved. The running service is unchanged until you apply it.'),
@@ -346,6 +475,14 @@ function tokenMessage(token) {
 		upload_unavailable: _('A private upload location could not be prepared.'),
 		settings_write_failed: _('Could not save Honk settings.'),
 		curl_missing: _('The curl command is missing. Install the curl package and try again.'),
+		kernel_too_old: _('内核版本过低，honk 需要 Linux 6.12 及以上，请升级固件。'),
+		kernel_compat_too_old: _('The compatibility core requires Linux 6.6.40 or newer.'),
+		core_capabilities_mismatch: _('The core does not match its compatibility metadata. Reinstall Honk.'),
+		kernel_btf_override_invalid: _('HONK_VMLINUX_BTF 指向的 BTF 文件读不到。核心设了这个变量就只认它、不会回退默认路径，请改正路径或取消该变量。'),
+		kernel_btf_missing: _('Kernel BTF is missing. Install vmlinux-btf matching your firmware, or use firmware with built-in BTF.'),
+		bpffs_not_mounted: _('bpffs 没有挂到 /sys/fs/bpf，请检查固件是否完整，或手工挂载后重试。'),
+		ip_full_missing: _('缺少 ip 命令，请安装 ip-full 包。'),
+		kmod_missing: _('缺少 modprobe 命令，请安装 kmod 包。'),
 		start_failed: _('Honk could not start.'),
 		stop_failed: _('Honk could not stop.'),
 		restart_failed: _('Honk could not restart.'),
@@ -367,6 +504,16 @@ function tokenMessage(token) {
 }
 
 function statusIssue(token) {
+	/* 内核模块检查会带上具体模块名，按前缀拆开再填进文案 */
+	if (typeof token === 'string' && token.indexOf('geo_asset_') === 0) {
+		const parts = token.split(':'), name = parts[1] || 'geo';
+		return parts[0] === 'geo_asset_truncated'
+			? _('The %s data file is incomplete (under 4 MiB). Download it again from Maintenance → Geo data.').format(name)
+			: _('The %s data file is missing. Download it from Maintenance → Geo data.').format(name);
+	}
+	if (typeof token === 'string' && token.indexOf('kernel_module_missing:') === 0)
+		return _('缺少内核模块 %s，请确认 kmod-sched-core / kmod-sched-bpf / kmod-veth / kmod-nft-queue 已安装。').format(token.slice('kernel_module_missing:'.length));
+
 	return tokenMessage(token) || _('Honk reported a system issue: %s').format(token);
 }
 
@@ -376,13 +523,13 @@ function resultMessage(result, fallback) {
 
 function errorMessage(error, fallback) {
 	const token = error && error.message;
-	const mapped = tokenMessage(token);
-	if (mapped)
-		return mapped;
 	/* 没映射过就把错误码原样带出来，否则用户只能看到「操作失败」，没法反馈 */
-	if (token && /^[a-z0-9_]+$/.test(token))
-		return _('%s (code: %s)').format(fallback || _('The operation failed.'), token);
-	return fallback;
+	const text = tokenMessage(token) || (token && /^[a-z0-9_]+$/.test(token)
+		? _('%s (code: %s)').format(fallback || _('The operation failed.'), token)
+		: fallback);
+	/* 后端把 stderr 摘要放进 detail，直接给用户，省得再去翻日志。 */
+	const detail = error && error.detail;
+	return detail ? _('%s Reason: %s').format(text, String(detail)) : text;
 }
 
 function jobPhaseMessage(phase) {
@@ -429,6 +576,7 @@ function waitJob(jobId, onProgress) {
 				if (result.state === 'failed' || result.state === 'rollback_required') {
 					const error = new Error(result.state === 'rollback_required' ? 'maintenance_recovery_required' : result.message || 'operation_failed');
 					error.recoveryRequired = result.state === 'rollback_required';
+					error.detail = result.detail;
 					reject(error);
 					return;
 				}
@@ -454,7 +602,15 @@ return baseclass.extend({
 	start: callStart,
 	stop: callStop,
 	restart: callRestart,
-	settings: callSettings,
+	settings: function(opts) {
+		/* rpc.declare 按位置传参，这里统一收口，避免调用处参数错位。 */
+		opts = opts || {};
+		return callSettings(
+			opts.lan_network, opts.lan_device, opts.listen_host, opts.listen_port,
+			opts.clash_api_enabled, opts.clash_host, opts.clash_api_port,
+			opts.clash_api_secret, opts.clash_api_secret_mode, opts.expect_sha256
+		);
+	},
 	probeSubscription: callProbeSubscription,
 	addSubscription: callAddSubscription,
 	addNodes: callAddNodes,
@@ -464,8 +620,15 @@ return baseclass.extend({
 	lanCandidates: callLanCandidates,
 	configValidate: callConfigValidate,
 	configSave: callConfigSave,
+	systemRead: callSystemRead,
+	systemSave: callSystemSave,
+	systemPanel: callSystemPanel,
 	configApply: callConfigApply,
+	configMergePreview: callConfigMergePreview,
+	configMergeApply: callConfigMergeApply,
+	configDetach: callConfigDetach,
 	repair: callRepair,
+	recover: callRecover,
 	backup: callBackup,
 	restore: callRestore,
 	restorePrepare: callRestorePrepare,
@@ -482,5 +645,6 @@ return baseclass.extend({
 	resultMessage: resultMessage,
 	errorMessage: errorMessage,
 	jobPhaseMessage: jobPhaseMessage,
+	switchControl: switchControl,
 	installStyles: installStyles
 });

@@ -30,7 +30,6 @@ start_service() {
 		return 1
 	}
 	"$HONK_CONTROL" preflight || return 1
-	"$HONK_CONTROL" local-direct || logger -t honk "local-direct sync skipped"
 	unset HONK_MAINT_CAP
 
 	# 所有配置都走 readiness 标记：状态页据此判断真正就绪，而不是只看进程在不在。
@@ -70,6 +69,19 @@ start_service() {
 	procd_set_param respawn 3600 5 5
 	procd_set_param term_timeout 20
 	procd_close_instance
+}
+
+# procd 默认的 stop→start 太快，start 的 preflight 会把还没清掉的 dae0 当残留
+# 拒绝，restart 完服务就停在停止状态。走 lifecycle 先排空再起。
+restart() {
+	# 没启用时 start 本来就会拒绝，走 lifecycle 只会多打一句误导性的
+	# “new managed core did not become stable and own its API listener”。
+	if [ "$(uci get honk.main.enabled 2>/dev/null)" != 1 ]; then
+		logger -t honk "restart skipped: service is not enabled"
+		return 0
+	fi
+	. /usr/share/honk/lifecycle.sh || return 1
+	honk_lifecycle_restart 30
 }
 
 reload_service() {

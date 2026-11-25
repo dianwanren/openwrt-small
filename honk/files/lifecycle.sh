@@ -1,19 +1,68 @@
 #!/bin/sh
 
 HONK_LIFECYCLE_CORE=/usr/bin/honk-core
+HONK_LIFECYCLE_HAVE_TIMEOUT=$(command -v timeout 2>/dev/null)
 
-# 字段归属：自带 global/experimental → file；只 include system.dae（且写法规范）→ system；
-# 其余一律 unknown。写法不规范时不猜，直接拒绝。
+HONK_LIFECYCLE_TICKS=1
+honk_lifecycle_detect_pause() {
+	HONK_LIFECYCLE_TICKS=1
+	[ -n "$HONK_LIFECYCLE_HAVE_TIMEOUT" ] || return 0
+	pause_before=$(cut -d' ' -f1 /proc/uptime 2>/dev/null)
+	[ -n "$pause_before" ] || return 0
+	timeout 0.25 sleep 1 2>/dev/null
+	pause_after=$(cut -d' ' -f1 /proc/uptime 2>/dev/null)
+	[ -n "$pause_after" ] || return 0
+	awk -v a="$pause_before" -v b="$pause_after" 'BEGIN { exit (b - a >= 0.15) ? 0 : 1 }' && \
+		HONK_LIFECYCLE_TICKS=4
+	return 0
+}
+honk_lifecycle_detect_pause
+
+# Layout owner: own global/experimental -> file; include system.dae only -> system;
+# anything else is unknown and refused. secrets.dae holds secrets and is allowed in both.
+# Only top-level include entries count; control.sh and rpcd share this.
+config_include_entries() {
+	awk '
+		BEGIN { inblock = 0 }
+		{
+			line = $0
+			sub(/\r$/, "", line)
+			if (!inblock) {
+				if (line ~ /^[[:space:]]*include[[:space:]]*\{/) { inblock = 1; rest = line; sub(/^[^{]*\{/, "", rest) }
+				else next
+			} else {
+				rest = line
+			}
+			sub(/#.*/, "", rest)
+			n = split(rest, parts, /[},]/)
+			for (i = 1; i <= n; i++) {
+				entry = parts[i]
+				gsub(/^[[:space:]\047"]+|[[:space:]\047"]+$/, "", entry)
+				if (entry != "") print entry
+			}
+			if (line ~ /\}/) inblock = 0
+		}
+	' "$1"
+}
+config_includes_entry() {
+	config_include_entries "$1" | grep -qxF "$2"
+}
+config_includes_system() {
+	config_includes_entry "$1" system.dae && echo yes
+}
+config_includes_secrets() {
+	config_includes_entry "$1" "${HONK_SECRETS_FILE:-secrets.dae}" && echo yes
+}
 config_owner() {
 	config_owner_file=${1:-/etc/honk/config.dae}
 	[ -f "$config_owner_file" ] && [ ! -L "$config_owner_file" ] || { echo unknown; return 0; }
-	own=$(awk '/^[[:space:]]*(global|experimental)[[:space:]]*\{/ { print "1"; exit }' "$config_owner_file")
-	inc=$(awk '
+	config_owner_state=$(awk '
 		{
 			line = $0
 			sub(/\r$/, "", line)
 			if (!in_block) {
-				# 只接受「include {」独占一行；同行带内容一律算不规范
+				if (line ~ /^[[:space:]]*(global|experimental)[[:space:]]*\{/) own = 1
+				# Only a lone `include {` line counts; text on the same line is irregular
 				if (line ~ /^[[:space:]]*include[[:space:]]*\{[[:space:]]*$/) { in_block = 1; next }
 				if (line ~ /^[[:space:]]*include[[:space:]]*\{/) { print "irregular"; next }
 				next
@@ -22,28 +71,48 @@ config_owner() {
 			if (line ~ /^[[:space:]]*\}/ || line ~ /\{/) { print "irregular"; next }
 			entry = line
 			sub(/#.*/, "", entry)
-			gsub(/^[[:space:]]+|[[:space:]]+$/, "", entry)
-			gsub(/["\047]/, "", entry)
+			gsub(/^[[:space:]\047"]+|[[:space:]\047"]+$/, "", entry)
 			if (entry == "") next
-			if (entry == "system.dae") print "system"
-			else if (entry ~ /^[A-Za-z0-9._-]+$/) print "other"
+			if (entry ~ /^[A-Za-z0-9._-]+$/) print "entry=" entry
 			else print "irregular"
 		}
-		END { if (in_block) print "irregular" }
+		END { if (in_block) print "irregular"; if (own) print "own" }
 	' "$config_owner_file")
-	has_system=
-	has_bad=
-	case "$inc" in *system*) has_system=1 ;; esac
-	case "$inc" in *other*|*irregular*) has_bad=1 ;; esac
-	if [ -n "$own" ]; then
-		[ -z "$inc" ] && echo file || echo unknown
-	elif [ -n "$has_bad" ]; then
-		echo unknown
-	elif [ -n "$has_system" ]; then
+	owner_own=
+	owner_system=
+	owner_other=
+	while IFS= read -r owner_token; do
+		case "$owner_token" in
+			own) owner_own=1 ;;
+			irregular) owner_other=1 ;;
+			entry=*)
+				case "${owner_token#entry=}" in
+					system.dae) owner_system=1 ;;
+					"${HONK_SECRETS_FILE:-secrets.dae}") ;;
+					*) owner_other=1 ;;
+				esac
+				;;
+			esac
+	done <<EOF
+$config_owner_state
+EOF
+	[ -z "$owner_other" ] || { echo unknown; return 0; }
+	if [ -n "$owner_own" ]; then
+		[ -z "$owner_system" ] && echo file || echo unknown
+	elif [ -n "$owner_system" ]; then
 		echo system
 	else
 		echo unknown
 	fi
+}
+
+# 0.25s polls so startup returns as soon as the core is ready; 1s without timeout(1).
+honk_lifecycle_pause() {
+	if [ "$HONK_LIFECYCLE_TICKS" -gt 1 ]; then
+		timeout 0.25 sleep 1 2>/dev/null
+		return 0
+	fi
+	sleep 1
 }
 
 honk_lifecycle_procd_pid() {	ubus call service list '{"name":"honk"}' 2>/dev/null | jsonfilter -e '@.honk.instances.main.pid' 2>/dev/null
@@ -153,6 +222,18 @@ honk_lifecycle_resources_clear() {
 	! ip netns list 2>/dev/null | awk '{print $1}' | grep -qx daens
 }
 
+honk_lifecycle_reclaim_resources() {
+	command -v ip >/dev/null 2>&1 || return 1
+	[ -z "$(pidof honk-core 2>/dev/null)" ] || return 1
+	for hlp_link in dae0 dae0peer; do
+		ip link show "$hlp_link" >/dev/null 2>&1 && ip link del "$hlp_link" >/dev/null 2>&1
+	done
+	if ip netns list 2>/dev/null | awk '{print $1}' | grep -qx daens; then
+		ip netns del daens >/dev/null 2>&1
+	fi
+	honk_lifecycle_resources_clear
+}
+
 honk_lifecycle_drain() {
 	hlp_timeout=${1:-30}
 	while [ "$hlp_timeout" -gt 0 ]; do
@@ -176,7 +257,10 @@ honk_lifecycle_drain() {
 			done
 			hlp_wait=1
 		fi
-		honk_lifecycle_resources_clear || hlp_wait=1
+		if ! honk_lifecycle_resources_clear; then
+			honk_lifecycle_reclaim_resources || :
+			honk_lifecycle_resources_clear || hlp_wait=1
+		fi
 		honk_lifecycle_parse_listen || { echo "honk lifecycle: invalid configured listener" >&2; return 1; }
 		hlp_port=$HONK_LIFECYCLE_PORT
 		if honk_lifecycle_port_open "$hlp_port"; then hlp_wait=1; fi
@@ -227,6 +311,7 @@ honk_lifecycle_start() {
 	# be told the start failed. Count distinct PIDs and give up early instead.
 	hlp_seen_pid=
 	hlp_attempts=0
+	hlp_tick=0
 	while [ "$hlp_timeout" -gt 0 ]; do
 		hlp_new_pid=$(honk_lifecycle_managed_pid 2>/dev/null)
 		if [ -n "$hlp_new_pid" ] && [ "$hlp_new_pid" != "$hlp_seen_pid" ]; then
@@ -264,8 +349,9 @@ honk_lifecycle_start() {
 			hlp_pid=
 			hlp_starttime=
 		fi
-		sleep 1
-		hlp_timeout=$((hlp_timeout - 1))
+		honk_lifecycle_pause
+		hlp_tick=$((hlp_tick + 1))
+		[ "$hlp_tick" -lt "$HONK_LIFECYCLE_TICKS" ] || { hlp_tick=0; hlp_timeout=$((hlp_timeout - 1)); }
 	done
 	echo "honk lifecycle: new managed core did not become stable and own its API listener" >&2
 	return 1

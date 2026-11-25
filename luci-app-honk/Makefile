@@ -5,18 +5,18 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-honk
-PKG_VERSION:=2026.11.02
+PKG_VERSION:=2026.11.24.2
 PKG_RELEASE:=1
 PKG_BUILD_DIR:=$(BUILD_DIR)/$(PKG_NAME)
 
-PKG_SOURCE:=doona-08b2a3e1-567a62ed5cac.tar.gz
+PKG_SOURCE:=doona-9dcb9489-355f3716f059.tar.gz
 # Each package Makefile is evaluated on its own, so this tag is defined here too
 # instead of relying on the honk package's variable. It must match honk/Makefile:
 # scripts/check.sh enforces that.
-HONK_SOURCE_TAG?=source-41400973213
+HONK_SOURCE_TAG?=source-verified-20261117
 PKG_SOURCE_URL?=https://github.com/kenzok8/openwrt-honk/releases/download/$(HONK_SOURCE_TAG)
 PKG_SOURCE_SUBDIR:=doona
-PKG_HASH:=567a62ed5cac88be540d73d9b41b09b309538b7cedc3b69d56fef880a084d96e
+PKG_HASH:=355f3716f059904ea5a74969e46af59cf282253101fb7cb27a778a2c620c32de
 
 -include $(CURDIR)/generated-doona-stage.mk
 
@@ -78,6 +78,7 @@ define Package/luci-app-honk/install
 	$(INSTALL_DIR) $(1)/www/luci-static/resources/view/honk
 	$(INSTALL_DATA) ./htdocs/luci-static/resources/view/honk/*.js $(1)/www/luci-static/resources/view/honk/
 	$(INSTALL_DATA) ./htdocs/luci-static/resources/view/honk/*.css $(1)/www/luci-static/resources/view/honk/
+	$(INSTALL_DATA) ./htdocs/luci-static/resources/view/honk/*.png $(1)/www/luci-static/resources/view/honk/
 	$(INSTALL_DIR) $(1)/www/luci-static/resources/view/honk/vendor
 	$(INSTALL_DATA) ./htdocs/luci-static/resources/view/honk/vendor/* $(1)/www/luci-static/resources/view/honk/vendor/
 
